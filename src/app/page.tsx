@@ -1,66 +1,44 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+"use client";
 
-export default function Home() {
-  return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className={styles.intro}>
-          <h1>To get started, edit the page.tsx file.</h1>
-          <p>
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className={styles.secondary}
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+import { Recorder } from "@/components/Recorder";
+import { useAuth } from "@/components/AuthProvider";
+
+export default function HomePage() {
+  const { user, loading, signIn } = useAuth();
+
+  if (loading) {
+    return (
+      <main className="page">
+        <p className="status">Loading…</p>
       </main>
-    </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <main className="page">
+        <section className="hero">
+          <h1>Record. Transcribe. Review.</h1>
+          <p className="lead">
+            Record a short video (up to 5 minutes). We&apos;ll upload it securely to
+            Firebase and transcribe it with Google Gemini so the admin panel can
+            review every recording.
+          </p>
+          <button className="btn btn-primary" onClick={() => void signIn()}>
+            Sign in with Google to get started
+          </button>
+        </section>
+      </main>
+    );
+  }
+
+  return (
+    <main className="page">
+      <h1>New recording</h1>
+      <p className="lead">
+        You&apos;re signed in as {user.email}. Recordings are capped at 5 minutes.
+      </p>
+      <Recorder />
+    </main>
   );
 }

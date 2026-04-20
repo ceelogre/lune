@@ -1,0 +1,27 @@
+rules_version = '2';
+
+// Storage rules for Lune.
+//
+// - Users can upload their own recordings under videos/{uid}/... (<= 500 MB).
+// - Transcripts are written server-side with the Admin SDK and readable only
+//   to the owning user; the admin panel reads via signed URLs from Admin SDK.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /videos/{uid}/{videoFile} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.size < 500 * 1024 * 1024
+        && request.resource.contentType.matches('video/.*');
+    }
+
+    match /transcripts/{uid}/{transcriptFile} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
