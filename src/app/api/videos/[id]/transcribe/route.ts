@@ -1,8 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { FieldValue } from "firebase-admin/firestore";
-import { adminBucket, adminDb } from "@/lib/firebase/admin";
 import { AuthError, verifyIdTokenFromRequest } from "@/lib/firebase/auth-helpers";
 import { transcribeVideo } from "@/lib/gemini";
+import {
+  getStorageBucketName,
+  getSupabaseServerClient,
+  type VideoRow,
+} from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -23,54 +26,73 @@ export async function POST(
   }
 
   const { id } = await context.params;
-  const db = adminDb();
-  const docRef = db.collection("videos").doc(id);
-  const snap = await docRef.get();
-  if (!snap.exists) {
+  const supabase = getSupabaseServerClient();
+  const bucket = getStorageBucketName();
+  const { data, error } = await supabase
+    .from("videos")
+    .select("*")
+    .eq("id", id)
+    .single<VideoRow>();
+  if (error || !data) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  const data = snap.data()!;
   if (data.uid !== decoded.uid) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const storagePath = data.storagePath as string;
-  const mimeType = (data.mimeType as string) ?? "video/webm";
+  const storagePath = data.storage_path;
+  const mimeType = data.mime_type ?? "video/webm";
 
   try {
-    const bucket = adminBucket();
-    const [buffer] = await bucket.file(storagePath).download();
-    const transcript = await transcribeVideo(buffer, mimeType);
+    const { data: videoBlob, error: downloadError } = await supabase.storage
+      .from(bucket)
+      .download(storagePath);
+    if (downloadError || !videoBlob) {
+      throw new Error(downloadError?.message ?? "Unable to download video");
+    }
+    const transcript = await transcribeVideo(
+      Buffer.from(await videoBlob.arrayBuffer()),
+      mimeType,
+    );
 
     const transcriptPath = `transcripts/${decoded.uid}/${id}.txt`;
-    await bucket.file(transcriptPath).save(transcript, {
-      contentType: "text/plain; charset=utf-8",
-      resumable: false,
-      metadata: {
-        metadata: {
-          uid: decoded.uid,
-          videoId: id,
-          model: "gemini-2.5-flash",
-        },
-      },
-    });
-
-    await docRef.update({
-      status: "ready",
-      transcript,
+    const { error: uploadError } = await supabase.storage.from(bucket).upload(
       transcriptPath,
-      error: null,
-      updatedAt: FieldValue.serverTimestamp(),
-    });
+      transcript,
+      {
+        contentType: "text/plain; charset=utf-8",
+        upsert: true,
+      },
+    );
+    if (uploadError) {
+      throw new Error(uploadError.message);
+    }
+
+    const { error: updateError } = await supabase
+      .from("videos")
+      .update({
+        status: "ready",
+        transcript,
+        transcript_path: transcriptPath,
+        error: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id);
+    if (updateError) {
+      throw new Error(updateError.message);
+    }
 
     return NextResponse.json({ ok: true, transcriptPath });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Transcription failed";
-    await docRef.update({
-      status: "failed",
-      error: message,
-      updatedAt: FieldValue.serverTimestamp(),
-    });
+    await supabase
+      .from("videos")
+      .update({
+        status: "failed",
+        error: message,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

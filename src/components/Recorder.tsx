@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ref as storageRef, uploadBytesResumable } from "firebase/storage";
-import { getFirebaseStorageClient } from "@/lib/firebase/client";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useAuth } from "./AuthProvider";
 
 const MAX_DURATION_MS = 5 * 60 * 1000;
@@ -197,27 +196,21 @@ export function Recorder() {
         const body = await createRes.json().catch(() => ({}));
         throw new Error(body.error ?? `Failed to create video (${createRes.status})`);
       }
-      const { id, storagePath } = (await createRes.json()) as {
+      const { id, storagePath, uploadToken } = (await createRes.json()) as {
         id: string;
         storagePath: string;
+        uploadToken: string;
       };
 
-      const storage = getFirebaseStorageClient();
-      const objectRef = storageRef(storage, storagePath);
-      await new Promise<void>((resolve, reject) => {
-        const task = uploadBytesResumable(objectRef, recordedBlob, {
-          contentType: mimeType,
-        });
-        task.on(
-          "state_changed",
-          (snap) => {
-            const pct = snap.totalBytes ? (snap.bytesTransferred / snap.totalBytes) * 100 : 0;
-            setUploadProgress(pct);
-          },
-          (err) => reject(err),
-          () => resolve(),
-        );
-      });
+      const supabase = getSupabaseBrowserClient();
+      setUploadProgress(15);
+      const { error: uploadError } = await supabase.storage
+        .from(process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET ?? "recordings")
+        .uploadToSignedUrl(storagePath, uploadToken, recordedBlob);
+      if (uploadError) {
+        throw new Error(uploadError.message);
+      }
+      setUploadProgress(100);
 
       await fetch(`/api/videos/${id}/complete`, {
         method: "POST",

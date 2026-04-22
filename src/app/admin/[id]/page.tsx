@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { adminBucket, adminDb } from "@/lib/firebase/admin";
+import { getStorageBucketName, getSupabaseServerClient, type VideoRow } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -34,41 +34,49 @@ function formatBytes(bytes: number | null): string {
 }
 
 async function getVideo(id: string): Promise<VideoDoc | null> {
-  const snap = await adminDb().collection("videos").doc(id).get();
-  if (!snap.exists) return null;
-  const data = snap.data()!;
+  const { data, error } = await getSupabaseServerClient()
+    .from("videos")
+    .select("*")
+    .eq("id", id)
+    .single<VideoRow>();
+  if (error || !data) return null;
   return {
     uid: data.uid,
     email: data.email ?? null,
-    storagePath: data.storagePath,
-    transcriptPath: data.transcriptPath ?? null,
+    storagePath: data.storage_path,
+    transcriptPath: data.transcript_path ?? null,
     transcript: data.transcript ?? null,
-    mimeType: data.mimeType ?? null,
-    durationMs: data.durationMs ?? null,
-    sizeBytes: data.sizeBytes ?? null,
+    mimeType: data.mime_type ?? null,
+    durationMs: data.duration_ms ?? null,
+    sizeBytes: data.size_bytes ?? null,
     status: data.status ?? "unknown",
     error: data.error ?? null,
-    createdAt: data.createdAt?.toMillis?.() ?? null,
-    updatedAt: data.updatedAt?.toMillis?.() ?? null,
+    createdAt: data.created_at ? new Date(data.created_at).getTime() : null,
+    updatedAt: data.updated_at ? new Date(data.updated_at).getTime() : null,
   };
 }
 
 async function getSignedUrl(path: string): Promise<string> {
-  const [url] = await adminBucket()
-    .file(path)
-    .getSignedUrl({
-      action: "read",
-      expires: Date.now() + 1000 * 60 * 60,
-    });
-  return url;
+  const { data, error } = await getSupabaseServerClient()
+    .storage
+    .from(getStorageBucketName())
+    .createSignedUrl(path, 3600);
+  if (error || !data?.signedUrl) {
+    throw new Error(error?.message ?? "Unable to create signed URL");
+  }
+  return data.signedUrl;
 }
 
 async function getTranscript(video: VideoDoc): Promise<string | null> {
   if (video.transcript) return video.transcript;
   if (!video.transcriptPath) return null;
   try {
-    const [buf] = await adminBucket().file(video.transcriptPath).download();
-    return buf.toString("utf-8");
+    const { data, error } = await getSupabaseServerClient()
+      .storage
+      .from(getStorageBucketName())
+      .download(video.transcriptPath);
+    if (error || !data) return null;
+    return Buffer.from(await data.arrayBuffer()).toString("utf-8");
   } catch {
     return null;
   }

@@ -1,7 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { FieldValue } from "firebase-admin/firestore";
-import { adminDb } from "@/lib/firebase/admin";
 import { AuthError, verifyIdTokenFromRequest } from "@/lib/firebase/auth-helpers";
+import { getSupabaseServerClient, type VideoRow } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
@@ -20,21 +19,26 @@ export async function POST(
   }
 
   const { id } = await context.params;
-  const db = adminDb();
-  const docRef = db.collection("videos").doc(id);
-  const snap = await docRef.get();
-  if (!snap.exists) {
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("videos")
+    .select("*")
+    .eq("id", id)
+    .single<VideoRow>();
+  if (error || !data) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  const data = snap.data()!;
   if (data.uid !== decoded.uid) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  await docRef.update({
+  const { error: updateError } = await supabase.from("videos").update({
     status: "transcribing",
-    updatedAt: FieldValue.serverTimestamp(),
-  });
+    updated_at: new Date().toISOString(),
+  }).eq("id", id);
+  if (updateError) {
+    return NextResponse.json({ error: updateError.message }, { status: 500 });
+  }
 
   return NextResponse.json({ ok: true });
 }

@@ -1,40 +1,71 @@
 # Lune — Video Analysis
 
-Next.js 16 + Firebase + Google Gemini. Signed-in users record up to 5-minute
-videos from the browser, the recording is uploaded to Firebase Storage, a
-server route transcribes it with Gemini 2.5 Flash, and an admin panel shows
-every recording with its transcript.
+Next.js 16 + Firebase Auth + Supabase Storage/DB + Google Gemini.
+Signed-in users record up to 5-minute videos from the browser, upload to
+Supabase Storage, then a server route transcribes via Gemini and saves both
+the transcript file and metadata in Supabase.
 
 ## Stack
 
 - **Next.js 16** App Router with React 19 and TypeScript.
-- **Firebase** — Auth (Google sign-in), Firestore (video metadata), Storage
-  (video files + transcripts).
+- **Firebase** — Auth only (Google sign-in + ID token verification).
+- **Supabase** — Postgres (`videos` table) + Storage bucket (`recordings`).
 - **Google Gemini** via `@google/genai` using the Files API and
   `gemini-2.5-flash`.
 
 ## Setup
 
-### 1. Firebase project
+### 1. Firebase project (Auth only)
 
 In the [Firebase console](https://console.firebase.google.com/):
 
 1. Create or pick a project.
 2. **Authentication → Sign-in method → Google**: enable it.
-3. **Firestore Database**: create a database in Native mode.
-4. **Storage**: create the default bucket.
-5. **Project settings → General → Your apps → Web**: register a web app and
-   copy the config values (apiKey, authDomain, projectId, storageBucket,
-   appId).
-6. **Project settings → Service accounts → Generate new private key**:
+3. **Project settings → General → Your apps → Web**: register a web app and
+   copy config values (`apiKey`, `authDomain`, `projectId`, `appId`).
+4. **Project settings → Service accounts → Generate new private key**:
    download the JSON. You'll paste `project_id`, `client_email`, and
    `private_key` from it into `.env.local`.
 
-### 2. Gemini API key
+### 2. Supabase project (Storage + DB)
+
+1. Create a project in [Supabase](https://supabase.com/dashboard).
+2. In **Project settings → API**, copy:
+   - `Project URL`
+   - `anon public` key
+   - `service_role` key
+3. In **Storage**, create a bucket named `recordings` (or set a different
+   name in `SUPABASE_STORAGE_BUCKET`).
+4. In **SQL editor**, run:
+
+```sql
+create extension if not exists "pgcrypto";
+
+create table if not exists public.videos (
+  id uuid primary key default gen_random_uuid(),
+  uid text not null,
+  email text,
+  storage_path text not null,
+  transcript_path text,
+  transcript text,
+  mime_type text,
+  status text not null default 'uploading',
+  duration_ms bigint,
+  size_bytes bigint,
+  error text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists videos_created_at_idx on public.videos (created_at desc);
+create index if not exists videos_uid_idx on public.videos (uid);
+```
+
+### 3. Gemini API key
 
 Create an API key at <https://aistudio.google.com/apikey>.
 
-### 3. Environment variables
+### 4. Environment variables
 
 Copy `.env.local.example` to `.env.local` and fill in every value:
 
@@ -42,22 +73,15 @@ Copy `.env.local.example` to `.env.local` and fill in every value:
 cp .env.local.example .env.local
 ```
 
-- `NEXT_PUBLIC_FIREBASE_*` come from the web app config in step 1.5.
-- `FIREBASE_ADMIN_*` come from the service-account JSON in step 1.6. When
+- `NEXT_PUBLIC_FIREBASE_*` come from the Firebase web app config in step 1.3.
+- `FIREBASE_ADMIN_*` come from the service-account JSON in step 1.4. When
   pasting `FIREBASE_ADMIN_PRIVATE_KEY`, keep the literal `\n` sequences — the
   server converts them to real newlines at runtime.
-- `GEMINI_API_KEY` is the key from step 2.
+- `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and
+  `SUPABASE_SERVICE_ROLE_KEY` come from step 2.
+- `GEMINI_API_KEY` is the key from step 3.
 - `ADMIN_EMAILS` is a comma-separated list of Google-account emails that
   should have access to `/admin`.
-
-### 4. Deploy security rules
-
-The project ships `firestore.rules` and `storage.rules`. Deploy them with the
-Firebase CLI (`npm i -g firebase-tools && firebase login`):
-
-```bash
-firebase deploy --only firestore:rules,storage
-```
 
 ### 5. Run locally
 
@@ -73,37 +97,37 @@ email is in `ADMIN_EMAILS`, you'll see the **Admin** link in the header.
 
 1. `Recorder` component uses `MediaRecorder` to capture a webm (or mp4 on
    Safari) clip. A 5-minute timer auto-stops recording.
-2. On upload, the browser calls `POST /api/videos` (sending its Firebase ID
-   token as a bearer) which creates a `videos/{id}` Firestore document and
-   returns the Storage path `videos/{uid}/{id}.webm`.
-3. The browser uploads the blob directly to Storage via
-   `uploadBytesResumable` with a progress bar.
+2. On upload, the browser calls `POST /api/videos` (with Firebase ID token).
+   The server inserts a `videos` row in Supabase and returns a signed upload
+   token for `videos/{uid}/{id}.webm`.
+3. The browser uploads the blob directly to Supabase Storage with
+   `uploadToSignedUrl`.
 4. The browser calls `POST /api/videos/{id}/complete` then
    `POST /api/videos/{id}/transcribe`.
-5. The transcribe route downloads the file via the Admin SDK, uploads it to
-   the Gemini Files API, waits until it's `ACTIVE`, and asks
+5. The transcribe route downloads from Supabase Storage, uploads to Gemini
+   Files API, waits until it's `ACTIVE`, and asks
    `gemini-2.5-flash` to transcribe the audio. The plain-text transcript is
-   written to `transcripts/{uid}/{id}.txt` **and** stored on the Firestore
-   document for quick display.
+   written to `transcripts/{uid}/{id}.txt` in Supabase Storage and duplicated
+   on the `videos` row for quick rendering.
 6. `/admin` (gated by the `ADMIN_EMAILS` allowlist and a
    Firebase session cookie) lists every recording; `/admin/{id}` streams the
    video from a signed URL and renders the transcript.
 
 ## Data model
 
-Firestore `videos/{id}`:
+Supabase `public.videos`:
 
 - `uid`, `email`
-- `storagePath` (`videos/{uid}/{id}.webm`)
-- `transcriptPath` (`transcripts/{uid}/{id}.txt`)
+- `storage_path` (`videos/{uid}/{id}.webm`)
+- `transcript_path` (`transcripts/{uid}/{id}.txt`)
 - `transcript` (string, duplicated for fast admin rendering)
 - `status` — `uploading` | `transcribing` | `ready` | `failed`
-- `durationMs`, `sizeBytes`, `mimeType`
-- `error`, `createdAt`, `updatedAt`
+- `duration_ms`, `size_bytes`, `mime_type`
+- `error`, `created_at`, `updated_at`
 
 ## Next up — rubric scoring
 
-The transcript is already on the Firestore document, so rubric scoring is a
+The transcript is already on the `videos` row, so rubric scoring is a
 drop-in addition:
 
 - Add `POST /api/videos/{id}/score` that reads `transcript`, calls Gemini with

@@ -13,10 +13,7 @@ export async function POST(request: Request) {
 
   try {
     const auth = adminAuth();
-    const decoded = await auth.verifyIdToken(idToken, true);
-    if (Date.now() / 1000 - decoded.auth_time > 5 * 60) {
-      return NextResponse.json({ error: "Recent sign-in required" }, { status: 401 });
-    }
+    await auth.verifyIdToken(idToken, true);
 
     const sessionCookie = await auth.createSessionCookie(idToken, {
       expiresIn: SESSION_TTL_MS,
@@ -31,8 +28,16 @@ export async function POST(request: Request) {
       maxAge: SESSION_TTL_MS / 1000,
     });
     return NextResponse.json({ ok: true });
-  } catch {
-    return NextResponse.json({ error: "Invalid token" }, { status: 401 });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Invalid token";
+    return NextResponse.json(
+      {
+        error:
+          process.env.NODE_ENV === "development" ? message : "Invalid token",
+      },
+      { status: 401 },
+    );
   }
 }
 

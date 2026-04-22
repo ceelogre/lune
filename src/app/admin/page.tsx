@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { adminDb } from "@/lib/firebase/admin";
+import { getSupabaseServerClient, type VideoRow as SupabaseVideoRow } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -25,20 +25,19 @@ function formatDate(ms: number | null): string {
 }
 
 async function listVideos(): Promise<VideoRow[]> {
-  const snap = await adminDb()
-    .collection("videos")
-    .orderBy("createdAt", "desc")
-    .limit(100)
-    .get();
-  return snap.docs.map((doc) => {
-    const data = doc.data();
-    const createdAt = data.createdAt?.toMillis?.() ?? null;
+  const { data, error } = await getSupabaseServerClient()
+    .from("videos")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (error || !data) return [];
+  return (data as SupabaseVideoRow[]).map((row) => {
     return {
-      id: doc.id,
-      email: (data.email as string | null) ?? null,
-      status: (data.status as string) ?? "unknown",
-      durationMs: (data.durationMs as number | null) ?? null,
-      createdAt,
+      id: row.id,
+      email: row.email ?? null,
+      status: row.status ?? "unknown",
+      durationMs: row.duration_ms ?? null,
+      createdAt: row.created_at ? new Date(row.created_at).getTime() : null,
     };
   });
 }

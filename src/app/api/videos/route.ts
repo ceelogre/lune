@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { FieldValue } from "firebase-admin/firestore";
-import { adminDb } from "@/lib/firebase/admin";
 import { AuthError, verifyIdTokenFromRequest } from "@/lib/firebase/auth-helpers";
+import { getStorageBucketName, getSupabaseServerClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
@@ -32,24 +31,38 @@ export async function POST(request: Request) {
   const mimeType = body.mimeType ?? "video/webm";
   const extension = safeExtension(body.extension);
 
-  const db = adminDb();
-  const docRef = db.collection("videos").doc();
-  const storagePath = `videos/${decoded.uid}/${docRef.id}.${extension}`;
+  const id = crypto.randomUUID();
+  const storagePath = `videos/${decoded.uid}/${id}.${extension}`;
 
-  await docRef.set({
+  const supabase = getSupabaseServerClient();
+  const bucket = getStorageBucketName();
+  const { data: uploadData, error: uploadError } = await supabase.storage
+    .from(bucket)
+    .createSignedUploadUrl(storagePath);
+  if (uploadError || !uploadData?.token) {
+    return NextResponse.json(
+      { error: uploadError?.message ?? "Failed to prepare upload URL" },
+      { status: 500 },
+    );
+  }
+
+  const { error: insertError } = await supabase.from("videos").insert({
+    id,
     uid: decoded.uid,
     email: decoded.email ?? null,
-    storagePath,
-    mimeType,
-    sizeBytes: typeof body.sizeBytes === "number" ? body.sizeBytes : null,
-    durationMs: typeof body.durationMs === "number" ? body.durationMs : null,
+    storage_path: storagePath,
+    mime_type: mimeType,
+    size_bytes: typeof body.sizeBytes === "number" ? body.sizeBytes : null,
+    duration_ms: typeof body.durationMs === "number" ? body.durationMs : null,
     status: "uploading",
     transcript: null,
-    transcriptPath: null,
+    transcript_path: null,
     error: null,
-    createdAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
+    updated_at: new Date().toISOString(),
   });
+  if (insertError) {
+    return NextResponse.json({ error: insertError.message }, { status: 500 });
+  }
 
-  return NextResponse.json({ id: docRef.id, storagePath });
+  return NextResponse.json({ id, storagePath, uploadToken: uploadData.token });
 }

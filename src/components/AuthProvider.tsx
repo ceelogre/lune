@@ -28,11 +28,15 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 async function postSessionCookie(idToken: string) {
-  await fetch("/api/session", {
+  const response = await fetch("/api/session", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ idToken }),
   });
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => ({}))) as { error?: string };
+    throw new Error(payload.error ?? `Session exchange failed (${response.status})`);
+  }
 }
 
 async function clearSessionCookie() {

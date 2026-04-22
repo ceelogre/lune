@@ -18,14 +18,12 @@ export default function HomePage() {
     return (
       <main className="page">
         <section className="hero">
-          <h1>Record. Transcribe. Review.</h1>
+          <h1>Lune - Video analysis</h1>
           <p className="lead">
-            Record a short video (up to 5 minutes). We&apos;ll upload it securely to
-            Firebase and transcribe it with Google Gemini so the admin panel can
-            review every recording.
+            Record a short video and get an AI-generated transcript.
           </p>
           <button className="btn btn-primary" onClick={() => void signIn()}>
-            Sign in with Google to get started
+            Sign in with Google
           </button>
         </section>
       </main>
