@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getStorageBucketName, getSupabaseServerClient, type VideoRow } from "@/lib/supabase/server";
+import { DeleteRecordingButton } from "@/components/DeleteRecordingButton";
 
 export const dynamic = "force-dynamic";
 
@@ -104,6 +105,13 @@ export default async function AdminVideoDetail({
         </Link>
       </p>
       <h1>Recording detail</h1>
+      <div style={{ margin: "0.5rem 0 1rem" }}>
+        <DeleteRecordingButton
+          recordingId={id}
+          redirectTo="/admin"
+          className="btn btn-danger"
+        />
+      </div>
 
       <div className="card" style={{ marginBottom: "1.5rem" }}>
         <dl

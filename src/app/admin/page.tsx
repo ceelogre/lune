@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getSupabaseServerClient, type VideoRow as SupabaseVideoRow } from "@/lib/supabase/server";
+import { DeleteRecordingButton } from "@/components/DeleteRecordingButton";
 
 export const dynamic = "force-dynamic";
 
@@ -75,9 +76,12 @@ export default async function AdminVideosPage() {
                   <span className={`badge ${v.status}`}>{v.status}</span>
                 </td>
                 <td>
-                  <Link href={`/admin/${v.id}`} className="nav-link">
-                    View
-                  </Link>
+                  <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                    <Link href={`/admin/${v.id}`} className="nav-link">
+                      View
+                    </Link>
+                    <DeleteRecordingButton recordingId={v.id} className="btn btn-ghost" />
+                  </div>
                 </td>
               </tr>
             ))}
