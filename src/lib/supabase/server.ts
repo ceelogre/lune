@@ -11,6 +11,11 @@ export type VideoRow = {
   status: "uploading" | "transcribing" | "ready" | "failed";
   duration_ms: number | null;
   size_bytes: number | null;
+  score: number | null;
+  rubric_breakdown: Record<string, unknown> | null;
+  score_feedback: string | null;
+  score_model: string | null;
+  scored_at: string | null;
   error: string | null;
   created_at: string;
   updated_at: string;

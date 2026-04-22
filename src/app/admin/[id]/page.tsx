@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getStorageBucketName, getSupabaseServerClient, type VideoRow } from "@/lib/supabase/server";
 import { DeleteRecordingButton } from "@/components/DeleteRecordingButton";
+import { ScoreRecordingButton } from "@/components/ScoreRecordingButton";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,11 @@ type VideoDoc = {
   mimeType: string | null;
   durationMs: number | null;
   sizeBytes: number | null;
+  score: number | null;
+  rubricBreakdown: Array<{ name: string; score: number; reason: string }> | null;
+  scoreFeedback: string | null;
+  scoreModel: string | null;
+  scoredAt: number | null;
   status: string;
   error: string | null;
   createdAt: number | null;
@@ -50,6 +56,13 @@ async function getVideo(id: string): Promise<VideoDoc | null> {
     mimeType: data.mime_type ?? null,
     durationMs: data.duration_ms ?? null,
     sizeBytes: data.size_bytes ?? null,
+    score: data.score ?? null,
+    rubricBreakdown: Array.isArray(data.rubric_breakdown)
+      ? (data.rubric_breakdown as Array<{ name: string; score: number; reason: string }>)
+      : null,
+    scoreFeedback: data.score_feedback ?? null,
+    scoreModel: data.score_model ?? null,
+    scoredAt: data.scored_at ? new Date(data.scored_at).getTime() : null,
     status: data.status ?? "unknown",
     error: data.error ?? null,
     createdAt: data.created_at ? new Date(data.created_at).getTime() : null,
@@ -105,7 +118,8 @@ export default async function AdminVideoDetail({
         </Link>
       </p>
       <h1>Recording detail</h1>
-      <div style={{ margin: "0.5rem 0 1rem" }}>
+      <div style={{ margin: "0.5rem 0 1rem", display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+        <ScoreRecordingButton recordingId={id} />
         <DeleteRecordingButton
           recordingId={id}
           redirectTo="/admin"
@@ -166,6 +180,37 @@ export default async function AdminVideoDetail({
             ? "No transcript text available."
             : "Transcript not ready yet."}
         </p>
+      )}
+
+      <h2 style={{ fontSize: "1.25rem", fontWeight: 600, margin: "1.5rem 0 0.75rem" }}>
+        Rubric score
+      </h2>
+      {video.score !== null ? (
+        <div className="card">
+          <p style={{ fontSize: "1.125rem", fontWeight: 700, marginBottom: "0.5rem" }}>
+            Overall: {video.score.toFixed(1)} / 100
+          </p>
+          <p className="status" style={{ marginBottom: "0.5rem" }}>
+            {video.scoreModel ? `Model: ${video.scoreModel}` : null}
+            {video.scoredAt ? ` • Scored at ${new Date(video.scoredAt).toLocaleString()}` : null}
+          </p>
+          {video.scoreFeedback ? (
+            <p style={{ marginBottom: "0.75rem" }}>{video.scoreFeedback}</p>
+          ) : null}
+          {video.rubricBreakdown && video.rubricBreakdown.length > 0 ? (
+            <ul style={{ paddingLeft: "1rem", display: "grid", gap: "0.5rem" }}>
+              {video.rubricBreakdown.map((item, idx) => (
+                <li key={`${item.name}-${idx}`}>
+                  <strong>{item.name}:</strong> {item.score.toFixed(1)} — {item.reason}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="status">No criterion breakdown available.</p>
+          )}
+        </div>
+      ) : (
+        <p className="status">No score yet. Click “Score recording” to run rubric analysis.</p>
       )}
     </main>
   );

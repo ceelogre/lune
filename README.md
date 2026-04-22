@@ -109,9 +109,12 @@ email is in `ADMIN_EMAILS`, you'll see the **Admin** link in the header.
    `gemini-2.5-flash` to transcribe the audio. The plain-text transcript is
    written to `transcripts/{uid}/{id}.txt` in Supabase Storage and duplicated
    on the `videos` row for quick rendering.
-6. `/admin` (gated by the `ADMIN_EMAILS` allowlist and a
+6. Admin can trigger rubric scoring (`POST /api/videos/{id}/score`). Gemini
+   analyzes the video + transcript and writes `score`, `rubric_breakdown`, and
+   `score_feedback` to the `videos` row.
+7. `/admin` (gated by the `ADMIN_EMAILS` allowlist and a
    Firebase session cookie) lists every recording; `/admin/{id}` streams the
-   video from a signed URL and renders the transcript.
+   video, renders transcript, and shows scoring results.
 
 ## Data model
 
@@ -123,6 +126,7 @@ Supabase `public.videos`:
 - `transcript` (string, duplicated for fast admin rendering)
 - `status` — `uploading` | `transcribing` | `ready` | `failed`
 - `duration_ms`, `size_bytes`, `mime_type`
+- `score`, `rubric_breakdown`, `score_feedback`, `score_model`, `scored_at`
 - `error`, `created_at`, `updated_at`
 
 ## Next up — rubric scoring

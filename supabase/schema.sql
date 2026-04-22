@@ -11,6 +11,11 @@ create table if not exists public.videos (
   status text not null default 'uploading',
   duration_ms bigint,
   size_bytes bigint,
+  score numeric(5,2),
+  rubric_breakdown jsonb,
+  score_feedback text,
+  score_model text,
+  scored_at timestamptz,
   error text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
