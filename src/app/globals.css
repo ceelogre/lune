@@ -330,3 +330,14 @@ a {
 .hero h1 {
   font-size: 2.5rem;
 }
+
+@media (max-width: 768px) {
+  .page {
+    padding: 1.25rem 1rem 2rem;
+  }
+
+  .recorder-video {
+    aspect-ratio: 3 / 4;
+    max-height: 72vh;
+  }
+}

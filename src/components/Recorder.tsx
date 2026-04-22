@@ -46,7 +46,6 @@ function extensionForMime(mime: string): string {
 export function Recorder() {
   const { user, getIdToken } = useAuth();
   const livePreviewRef = useRef<HTMLVideoElement | null>(null);
-  const playbackRef = useRef<HTMLVideoElement | null>(null);
   const previewStreamRef = useRef<MediaStream | null>(null);
   const recordStreamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -63,6 +62,17 @@ export function Recorder() {
   const [durationMs, setDurationMs] = useState(0);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+
+  const stopMediaStream = useCallback((stream: MediaStream | null) => {
+    stream?.getTracks().forEach((t) => t.stop());
+  }, []);
+
+  const replaceRecordedUrl = useCallback((nextUrl: string | null) => {
+    setRecordedUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return nextUrl;
+    });
+  }, []);
 
   const attachPreviewStream = useCallback((stream: MediaStream) => {
     const video = livePreviewRef.current;
@@ -88,11 +98,11 @@ export function Recorder() {
   }, []);
 
   const cleanupStreams = useCallback(() => {
-    previewStreamRef.current?.getTracks().forEach((t) => t.stop());
+    stopMediaStream(previewStreamRef.current);
     previewStreamRef.current = null;
-    recordStreamRef.current?.getTracks().forEach((t) => t.stop());
+    stopMediaStream(recordStreamRef.current);
     recordStreamRef.current = null;
-  }, []);
+  }, [stopMediaStream]);
 
   const clearTimers = useCallback(() => {
     if (countdownRef.current !== null) {
@@ -117,12 +127,22 @@ export function Recorder() {
     setError(null);
     setState("requesting");
     try {
+      const isMobileViewport = window.matchMedia("(max-width: 768px)").matches;
+      const videoConstraints: MediaTrackConstraints = isMobileViewport
+        ? {
+            facingMode: { ideal: "user" },
+            width: { ideal: 1080 },
+            height: { ideal: 1440 },
+            aspectRatio: { ideal: 3 / 4 },
+          }
+        : {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            facingMode: { ideal: "user" },
+          };
+
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          facingMode: { ideal: "user" },
-        },
+        video: videoConstraints,
         audio: true,
       });
       previewStreamRef.current = stream;
@@ -156,16 +176,13 @@ export function Recorder() {
     };
     recorder.onstop = () => {
       clearTimers();
-      recordStreamRef.current?.getTracks().forEach((t) => t.stop());
+      stopMediaStream(recordStreamRef.current);
       recordStreamRef.current = null;
       const duration = Date.now() - startedAtRef.current;
       const blob = new Blob(chunksRef.current, { type: mimeType });
       setDurationMs(duration);
       setRecordedBlob(blob);
-      setRecordedUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return URL.createObjectURL(blob);
-      });
+      replaceRecordedUrl(URL.createObjectURL(blob));
       cleanupStreams();
       setState("preview");
     };
@@ -183,22 +200,19 @@ export function Recorder() {
     stopTimerRef.current = window.setTimeout(() => {
       stopRecording();
     }, MAX_DURATION_MS);
-  }, [cleanupStreams, clearTimers, mimeType, stopRecording]);
+  }, [cleanupStreams, clearTimers, mimeType, replaceRecordedUrl, stopMediaStream, stopRecording]);
 
   const resetToIdle = useCallback(() => {
     clearTimers();
     cleanupStreams();
     setRecordedBlob(null);
-    setRecordedUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return null;
-    });
+    replaceRecordedUrl(null);
     setUploadProgress(0);
     setDurationMs(0);
     setRemainingMs(MAX_DURATION_MS);
     setError(null);
     setState("idle");
-  }, [cleanupStreams, clearTimers]);
+  }, [cleanupStreams, clearTimers, replaceRecordedUrl]);
 
   const upload = useCallback(async () => {
     if (!user || !recordedBlob) return;
@@ -280,7 +294,7 @@ export function Recorder() {
     const stream = previewStreamRef.current;
     if (!stream) return;
     attachPreviewStream(stream);
-  }, [attachPreviewStream, showLivePreview, state]);
+  }, [attachPreviewStream, showLivePreview]);
 
   return (
     <div className="recorder card">
@@ -296,7 +310,6 @@ export function Recorder() {
 
       {showPlayback && recordedUrl ? (
         <video
-          ref={playbackRef}
           className="recorder-video"
           src={recordedUrl}
           controls
