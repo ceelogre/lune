@@ -307,10 +307,6 @@ export function Recorder() {
             playsInline
             muted
           />
-          <div className="head-guide" aria-hidden="true">
-            <div className="head-guide-ring" />
-            <p className="head-guide-text">Center your face in the oval</p>
-          </div>
         </div>
       ) : null}
 
