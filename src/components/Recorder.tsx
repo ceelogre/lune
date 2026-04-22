@@ -48,6 +48,7 @@ export function Recorder() {
   const livePreviewRef = useRef<HTMLVideoElement | null>(null);
   const playbackRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const previewStreamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const countdownRef = useRef<number | null>(null);
@@ -63,9 +64,11 @@ export function Recorder() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  const cleanupStream = useCallback(() => {
+  const cleanupStreams = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
+    previewStreamRef.current?.getTracks().forEach((t) => t.stop());
+    previewStreamRef.current = null;
   }, []);
 
   const clearTimers = useCallback(() => {
@@ -82,10 +85,10 @@ export function Recorder() {
   useEffect(() => {
     return () => {
       clearTimers();
-      cleanupStream();
+      cleanupStreams();
       if (recordedUrl) URL.revokeObjectURL(recordedUrl);
     };
-  }, [clearTimers, cleanupStream, recordedUrl]);
+  }, [clearTimers, cleanupStreams, recordedUrl]);
 
   const requestCamera = useCallback(async () => {
     setError(null);
@@ -96,8 +99,12 @@ export function Recorder() {
         audio: true,
       });
       streamRef.current = stream;
+      previewStreamRef.current = stream.clone();
       if (livePreviewRef.current) {
-        livePreviewRef.current.srcObject = stream;
+        livePreviewRef.current.srcObject = previewStreamRef.current;
+        void livePreviewRef.current.play().catch(() => {
+          // Ignore autoplay edge-cases; user interaction already happened.
+        });
       }
       setMimeType(pickMimeType());
       setState("ready");
@@ -135,7 +142,7 @@ export function Recorder() {
         if (prev) URL.revokeObjectURL(prev);
         return URL.createObjectURL(blob);
       });
-      cleanupStream();
+      cleanupStreams();
       setState("preview");
     };
 
@@ -152,11 +159,11 @@ export function Recorder() {
     stopTimerRef.current = window.setTimeout(() => {
       stopRecording();
     }, MAX_DURATION_MS);
-  }, [cleanupStream, clearTimers, mimeType, stopRecording]);
+  }, [cleanupStreams, clearTimers, mimeType, stopRecording]);
 
   const resetToIdle = useCallback(() => {
     clearTimers();
-    cleanupStream();
+    cleanupStreams();
     setRecordedBlob(null);
     setRecordedUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
@@ -167,7 +174,7 @@ export function Recorder() {
     setRemainingMs(MAX_DURATION_MS);
     setError(null);
     setState("idle");
-  }, [cleanupStream, clearTimers]);
+  }, [cleanupStreams, clearTimers]);
 
   const upload = useCallback(async () => {
     if (!user || !recordedBlob) return;
