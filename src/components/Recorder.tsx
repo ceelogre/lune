@@ -132,8 +132,8 @@ export function Recorder() {
         ? {
             facingMode: { ideal: "user" },
             width: { ideal: 1080 },
-            height: { ideal: 1440 },
-            aspectRatio: { ideal: 3 / 4 },
+            height: { ideal: 1350 },
+            aspectRatio: { ideal: 4 / 5 },
           }
         : {
             width: { ideal: 1280 },
@@ -299,13 +299,19 @@ export function Recorder() {
   return (
     <div className="recorder card">
       {showLivePreview ? (
-        <video
-          ref={livePreviewRef}
-          className="recorder-video"
-          autoPlay
-          playsInline
-          muted
-        />
+        <div className="recorder-preview-wrap">
+          <video
+            ref={livePreviewRef}
+            className="recorder-video"
+            autoPlay
+            playsInline
+            muted
+          />
+          <div className="head-guide" aria-hidden="true">
+            <div className="head-guide-ring" />
+            <p className="head-guide-text">Center your face in the oval</p>
+          </div>
+        </div>
       ) : null}
 
       {showPlayback && recordedUrl ? (
