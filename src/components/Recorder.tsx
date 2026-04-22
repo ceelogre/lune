@@ -47,8 +47,8 @@ export function Recorder() {
   const { user, getIdToken } = useAuth();
   const livePreviewRef = useRef<HTMLVideoElement | null>(null);
   const playbackRef = useRef<HTMLVideoElement | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
   const previewStreamRef = useRef<MediaStream | null>(null);
+  const recordStreamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const countdownRef = useRef<number | null>(null);
@@ -64,11 +64,34 @@ export function Recorder() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
+  const attachPreviewStream = useCallback((stream: MediaStream) => {
+    const video = livePreviewRef.current;
+    if (!video) return;
+
+    video.muted = true;
+    video.playsInline = true;
+    video.autoplay = true;
+
+    // Some Safari/Brave builds need a detach/reattach cycle before rendering frames.
+    video.srcObject = null;
+    video.srcObject = stream;
+
+    const tryPlay = () => video.play().catch(() => undefined);
+    void tryPlay();
+    void Promise.resolve().then(tryPlay);
+    window.setTimeout(() => {
+      void tryPlay();
+    }, 30);
+    window.setTimeout(() => {
+      void tryPlay();
+    }, 120);
+  }, []);
+
   const cleanupStreams = useCallback(() => {
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    streamRef.current = null;
     previewStreamRef.current?.getTracks().forEach((t) => t.stop());
     previewStreamRef.current = null;
+    recordStreamRef.current?.getTracks().forEach((t) => t.stop());
+    recordStreamRef.current = null;
   }, []);
 
   const clearTimers = useCallback(() => {
@@ -95,24 +118,22 @@ export function Recorder() {
     setState("requesting");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          facingMode: { ideal: "user" },
+        },
         audio: true,
       });
-      streamRef.current = stream;
-      previewStreamRef.current = stream.clone();
-      if (livePreviewRef.current) {
-        livePreviewRef.current.srcObject = previewStreamRef.current;
-        void livePreviewRef.current.play().catch(() => {
-          // Ignore autoplay edge-cases; user interaction already happened.
-        });
-      }
+      previewStreamRef.current = stream;
+      attachPreviewStream(stream);
       setMimeType(pickMimeType());
       setState("ready");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to access camera/microphone");
       setState("error");
     }
-  }, []);
+  }, [attachPreviewStream]);
 
   const stopRecording = useCallback(() => {
     const recorder = recorderRef.current;
@@ -122,11 +143,12 @@ export function Recorder() {
   }, []);
 
   const startRecording = useCallback(() => {
-    const stream = streamRef.current;
-    if (!stream) return;
+    const previewStream = previewStreamRef.current;
+    if (!previewStream) return;
 
     chunksRef.current = [];
-    const recorder = new MediaRecorder(stream, { mimeType });
+    recordStreamRef.current = previewStream.clone();
+    const recorder = new MediaRecorder(recordStreamRef.current, { mimeType });
     recorderRef.current = recorder;
 
     recorder.ondataavailable = (event) => {
@@ -134,6 +156,8 @@ export function Recorder() {
     };
     recorder.onstop = () => {
       clearTimers();
+      recordStreamRef.current?.getTracks().forEach((t) => t.stop());
+      recordStreamRef.current = null;
       const duration = Date.now() - startedAtRef.current;
       const blob = new Blob(chunksRef.current, { type: mimeType });
       setDurationMs(duration);
@@ -250,6 +274,13 @@ export function Recorder() {
 
   const showLivePreview = state === "ready" || state === "recording";
   const showPlayback = state === "preview" || state === "uploading" || state === "transcribing" || state === "done";
+
+  useEffect(() => {
+    if (!showLivePreview) return;
+    const stream = previewStreamRef.current;
+    if (!stream) return;
+    attachPreviewStream(stream);
+  }, [attachPreviewStream, showLivePreview, state]);
 
   return (
     <div className="recorder card">
